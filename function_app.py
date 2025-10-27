@@ -25,9 +25,6 @@ def EnviarNFSEFunction(msg: func.ServiceBusMessage):
 
         data = json.loads(body)
 
-        # ==========================
-        # Monta o payload da NFSe
-        # ==========================
         payload = {
             "cityServiceCode": data.get("codigo_servico", "101"),
             "description": data.get("descricao", "Serviço prestado"),
@@ -64,16 +61,11 @@ def EnviarNFSEFunction(msg: func.ServiceBusMessage):
             "Authorization": f"Basic {api_key}"
         }
 
-        # ===============================
-        # 🔄 Envia NFSe pro NFe.io
-        # ===============================
+
         logging.info("➡️ Enviando NFSe para NFe.io...")
         response = requests.post(url, headers=headers, data=json.dumps(payload))
         logging.info(f"📤 Resposta NFe.io: {response.status_code}")
 
-        # ===============================
-        # ✉️ Envia e-mail independente do resultado
-        # ===============================
         email_destinatario = data.get("email", "")
         if not email_destinatario:
             logging.warning("⚠️ Nenhum e-mail informado na mensagem, não foi possível enviar aviso.")
@@ -97,9 +89,6 @@ def EnviarNFSEFunction(msg: func.ServiceBusMessage):
         logging.error(f"❌ Erro geral na função: {e}")
 
 
-# ==============================================================
-# ✉️ Função HTTP para enviar e-mail (POST manual)
-# ==============================================================
 @app.route(route="EnviarEmailFunction", auth_level=func.AuthLevel.ANONYMOUS)
 def EnviarEmailFunction(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("📨 Função HTTP de envio de e-mail acionada.")
@@ -126,9 +115,6 @@ def EnviarEmailFunction(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(f"❌ Erro ao enviar e-mail: {str(e)}", status_code=500)
 
 
-# ==============================================================
-# ⚙️ Função auxiliar: envio de e-mail via SMTP
-# ==============================================================
 def enviar_email(destinatario, assunto, mensagem):
     remetente = os.getenv("SMTP_USER", "vieira.rgabi@gmail.com")
     senha = os.getenv("SMTP_PASS", "mjhj qtfa dlhr qulk")
