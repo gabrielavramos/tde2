@@ -13,7 +13,6 @@ app = func.FunctionApp()
 # ==============================================================
 # 🎯 Função disparada pela fila "integracao-nf"
 # ==============================================================
-
 @app.service_bus_queue_trigger(
     arg_name="msg",
     queue_name="integracao-nf",
@@ -26,6 +25,9 @@ def EnviarNFSEFunction(msg: func.ServiceBusMessage):
 
         data = json.loads(body)
 
+        # ==========================
+        # Monta o payload da NFSe
+        # ==========================
         payload = {
             "cityServiceCode": data.get("codigo_servico", "101"),
             "description": data.get("descricao", "Serviço prestado"),
@@ -62,25 +64,45 @@ def EnviarNFSEFunction(msg: func.ServiceBusMessage):
             "Authorization": f"Basic {api_key}"
         }
 
+        # ===============================
+        # 🔄 Envia NFSe pro NFe.io
+        # ===============================
+        logging.info("➡️ Enviando NFSe para NFe.io...")
         response = requests.post(url, headers=headers, data=json.dumps(payload))
-        logging.info(f"📤 Enviando NFSe para NFE.io: {response.status_code}")
+        logging.info(f"📤 Resposta NFe.io: {response.status_code}")
+
+        # ===============================
+        # ✉️ Envia e-mail independente do resultado
+        # ===============================
+        email_destinatario = data.get("email", "")
+        if not email_destinatario:
+            logging.warning("⚠️ Nenhum e-mail informado na mensagem, não foi possível enviar aviso.")
+            return
 
         if response.status_code in (200, 201):
-            logging.info(f"✅ NFSe enviada com sucesso: {response.json()}")
+            assunto = "✅ NFSe emitida com sucesso"
+            mensagem = f"A NFSe do cliente {data.get('cliente')} foi emitida com sucesso."
         else:
-            logging.error(f"❌ Erro ao enviar NFSe: {response.text}")
+            assunto = "❌ Falha ao emitir NFSe"
+            mensagem = (
+                f"Falha ao emitir NFSe para o cliente {data.get('cliente')}.\n\n"
+                f"Código de status: {response.status_code}\n"
+                f"Detalhes: {response.text}"
+            )
+
+        enviar_email(email_destinatario, assunto, mensagem)
+        logging.info(f"📧 E-mail enviado para {email_destinatario}")
 
     except Exception as e:
         logging.error(f"❌ Erro geral na função: {e}")
 
 
 # ==============================================================
-# ✉️ Função HTTP para enviar e-mail (POST)
+# ✉️ Função HTTP para enviar e-mail (POST manual)
 # ==============================================================
-
 @app.route(route="EnviarEmailFunction", auth_level=func.AuthLevel.ANONYMOUS)
 def EnviarEmailFunction(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info("📨 Função de envio de e-mail acionada.")
+    logging.info("📨 Função HTTP de envio de e-mail acionada.")
 
     try:
         req_body = req.get_json()
@@ -97,26 +119,29 @@ def EnviarEmailFunction(req: func.HttpRequest) -> func.HttpResponse:
             status_code=400
         )
 
-    remetente = "seuemail@gmail.com"
-    senha = "suasenha"
-    servidor_smtp = "smtp.gmail.com"
-    porta = 587
-
     try:
-        msg_email = MIMEMultipart()
-        msg_email["From"] = remetente
-        msg_email["To"] = destinatario
-        msg_email["Subject"] = assunto
-        msg_email.attach(MIMEText(mensagem, "plain"))
-
-        with smtplib.SMTP(servidor_smtp, porta) as server:
-            server.starttls()
-            server.login(remetente, senha)
-            server.send_message(msg_email)
-
-        logging.info(f"📧 E-mail enviado para {destinatario}")
-        return func.HttpResponse(f"E-mail enviado para {destinatario}", status_code=200)
-
+        enviar_email(destinatario, assunto, mensagem)
+        return func.HttpResponse(f"📧 E-mail enviado para {destinatario}", status_code=200)
     except Exception as e:
-        logging.error(f"❌ Erro ao enviar e-mail: {e}")
-        return func.HttpResponse(f"Erro ao enviar e-mail: {str(e)}", status_code=500)
+        return func.HttpResponse(f"❌ Erro ao enviar e-mail: {str(e)}", status_code=500)
+
+
+# ==============================================================
+# ⚙️ Função auxiliar: envio de e-mail via SMTP
+# ==============================================================
+def enviar_email(destinatario, assunto, mensagem):
+    remetente = os.getenv("SMTP_USER", "vieira.rgabi@gmail.com")
+    senha = os.getenv("SMTP_PASS", "mjhj qtfa dlhr qulk")
+    servidor_smtp = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+    porta = int(os.getenv("SMTP_PORT", 587))
+
+    msg_email = MIMEMultipart()
+    msg_email["From"] = remetente
+    msg_email["To"] = destinatario
+    msg_email["Subject"] = assunto
+    msg_email.attach(MIMEText(mensagem, "plain"))
+
+    with smtplib.SMTP(servidor_smtp, porta) as server:
+        server.starttls()
+        server.login(remetente, senha)
+        server.send_message(msg_email)
