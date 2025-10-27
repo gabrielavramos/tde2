@@ -10,9 +10,6 @@ import os
 
 app = func.FunctionApp()
 
-# ==============================================================
-# 🎯 Função disparada pela fila "integracao-nf"
-# ==============================================================
 @app.service_bus_queue_trigger(
     arg_name="msg",
     queue_name="integracao-nf",
